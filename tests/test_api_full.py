@@ -1,8 +1,8 @@
 import pytest
-from fastapi.testclient import TestClient
 from main import app
+from tests.conftest import CsrfTestClient
 
-client = TestClient(app)
+client = CsrfTestClient(app)
 
 # Dados de teste
 _USER1 = {"nome": "QA Admin", "email": "admin_qa_1@diartrip.com", "senha": "Teste1234"}

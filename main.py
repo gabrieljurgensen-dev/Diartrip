@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -6,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from database import get_db
 from utils.logger import configurar_logging, get_logger
+from utils.csrf import checar_csrf
 
 from routes import usuarios, login, grupos_viagem, roteiros, grupos_membros, gastos, chat_ia, fotos, dashboard, posts, chat_grupo
 
@@ -13,10 +15,24 @@ load_dotenv()
 configurar_logging()
 logger = get_logger("main")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from utils.redis_client import get_redis
+    if get_redis() is None and os.getenv("ENVIRONMENT", "development") == "production":
+        logger.warning(
+            "AVISO DE SEGURANÇA: Redis indisponível em ambiente de produção. "
+            "Rate limit e blacklist de tokens operam em memória local — "
+            "com múltiplos workers isso permite bypass parcial. Configure REDIS_URL."
+        )
+    yield
+
+
 app = FastAPI(
     title="Diartrip API",
     version="1.0.0",
     description="API REST para gerenciamento de viagens em grupo.",
+    lifespan=lifespan,
 )
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://127.0.0.1:8000").split(",")
@@ -33,13 +49,20 @@ _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "SAMEORIGIN",
     "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
     "Content-Security-Policy": (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; "
         "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; "
         "img-src 'self' data: https:; "
-        "connect-src 'self' https://api.geoapify.com https://nominatim.openstreetmap.org;"
+        "connect-src 'self' https://api.geoapify.com https://nominatim.openstreetmap.org; "
+        "base-uri 'self'; "
+        "object-src 'none'; "
+        "form-action 'self'; "
+        "frame-ancestors 'self';"
+        # 'unsafe-inline' é necessário pelo frontend HTML puro com scripts inline.
+        # Em produção com frontend separado (React/Vue), remover e usar nonce/hash.
     ),
 }
 
@@ -47,6 +70,11 @@ _SECURITY_HEADERS = {
 @app.middleware("http")
 async def capturar_excecoes(request: Request, call_next):
     try:
+        csrf_erro = await checar_csrf(request)
+        if csrf_erro is not None:
+            for h, v in _SECURITY_HEADERS.items():
+                csrf_erro.headers[h] = v
+            return csrf_erro
         response = await call_next(request)
         for header, value in _SECURITY_HEADERS.items():
             response.headers[header] = value

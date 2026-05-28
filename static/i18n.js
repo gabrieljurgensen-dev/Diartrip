@@ -1,10 +1,28 @@
-// Redirect to login on session expiry (401). Skips the /login endpoint itself.
+// Global fetch interceptor: injects CSRF token header and handles 401 redirects.
 ;(function () {
     const _orig = window.fetch.bind(window)
+    const _MUTANTES = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+    function _getCsrfToken() {
+        const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/)
+        return match ? decodeURIComponent(match[1]) : null
+    }
+
     window.fetch = async function (...args) {
-        const resp = await _orig(...args)
+        let resource = args[0]
+        let config = args[1] ? { ...args[1] } : {}
+        const method = (config.method || 'GET').toUpperCase()
+
+        if (_MUTANTES.has(method)) {
+            const token = _getCsrfToken()
+            if (token) {
+                config.headers = { ...(config.headers || {}), 'X-CSRF-Token': token }
+            }
+        }
+
+        const resp = await _orig(resource, config)
         if (resp.status === 401) {
-            const url = String(args[0] ?? '')
+            const url = String(resource ?? '')
             if (!url.includes('/login') && !url.includes('/index')) {
                 window.location.href = '/index.html'
             }

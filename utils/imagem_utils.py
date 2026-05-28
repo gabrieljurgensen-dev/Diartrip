@@ -1,8 +1,18 @@
 import io
+import os
+import re
 from fastapi import HTTPException
 
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 MAX_SIZE = 5 * 1024 * 1024
+
+
+def extrair_extensao(nome_arquivo: str) -> str:
+    """Extrai e normaliza a extensão de forma segura, impedindo path traversal."""
+    nome = os.path.basename(nome_arquivo or "")
+    nome = re.sub(r"[^\w.\-]", "_", nome)
+    partes = nome.rsplit(".", 1)
+    return partes[-1].lower() if len(partes) == 2 else ""
 
 
 def _magic_bytes_ok(conteudo: bytes, ext: str) -> bool:

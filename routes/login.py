@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from database import get_db
 from utils.security import verificar_senha, criar_token, revogar_token
 from utils.rate_limiter import verificar_rate_limit
+from utils.csrf import gerar_csrf_token
 
 router = APIRouter()
 
@@ -30,10 +31,19 @@ def login(dados: LoginInput, response: Response):
             if not usuario or not verificar_senha(dados.senha, usuario["senha_hash"]):
                 raise HTTPException(status_code=401, detail="Informações inválidas")
             token = criar_token(usuario["id_usuario"])
+            csrf = gerar_csrf_token()
             response.set_cookie(
                 key="access_token",
                 value=token,
                 httponly=True,
+                samesite="strict",
+                max_age=7200,
+                secure=_SECURE_COOKIES,
+            )
+            response.set_cookie(
+                key="csrf_token",
+                value=csrf,
+                httponly=False,
                 samesite="strict",
                 max_age=7200,
                 secure=_SECURE_COOKIES,
@@ -47,5 +57,16 @@ def login(dados: LoginInput, response: Response):
 def logout(response: Response, access_token: str | None = Cookie(default=None)):
     if access_token:
         revogar_token(access_token)
-    response.delete_cookie("access_token")
+    response.delete_cookie(
+        key="access_token",
+        httponly=True,
+        samesite="strict",
+        secure=_SECURE_COOKIES,
+    )
+    response.delete_cookie(
+        key="csrf_token",
+        httponly=False,
+        samesite="strict",
+        secure=_SECURE_COOKIES,
+    )
     return {"mensagem": "Logout realizado"}

@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from database import get_db
 from utils.dependencies import checar_membro_grupo
 from utils.cloudinary_upload import upload_imagem, deletar_imagem
-from utils.imagem_utils import validar_imagem, strip_exif
+from utils.imagem_utils import validar_imagem, strip_exif, extrair_extensao
 
 logger = logging.getLogger("diartrip.foto")
 
@@ -37,7 +37,7 @@ def salvar(
     arquivo_size: int,
     template_usado: str | None,
 ) -> dict:
-    ext = arquivo_nome.split(".")[-1].lower() if arquivo_nome else ""
+    ext = extrair_extensao(arquivo_nome)
     validar_imagem(arquivo_bytes, ext)
     arquivo_bytes = strip_exif(arquivo_bytes, ext)
 

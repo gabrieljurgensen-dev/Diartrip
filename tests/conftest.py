@@ -133,6 +133,25 @@ _redis_mod._client = None
 from fastapi.testclient import TestClient
 from main import app
 
+# Token CSRF fixo usado nos testes autenticados.
+_TEST_CSRF = "test-csrf-token-pytest-2026"
+
+_METODOS_MUTANTES = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+class CsrfTestClient(TestClient):
+    """TestClient que injeta X-CSRF-Token automaticamente em requisições mutantes,
+    lendo o valor do cookie csrf_token já presente no jar do cliente."""
+
+    def request(self, method, url, **kwargs):
+        if method.upper() in _METODOS_MUTANTES:
+            csrf = self.cookies.get("csrf_token")
+            if csrf:
+                headers = dict(kwargs.get("headers") or {})
+                headers.setdefault("X-CSRF-Token", csrf)
+                kwargs["headers"] = headers
+        return super().request(method, url, **kwargs)
+
 
 # --------------------------------------------------------------------------- #
 # Helpers para criar cursor mock configuravel
@@ -222,7 +241,7 @@ def token_admin():
 def client():
     """TestClient FastAPI sem autenticacao — um novo por teste para isolamento."""
     from main import app
-    with TestClient(app, raise_server_exceptions=False) as c:
+    with CsrfTestClient(app, raise_server_exceptions=False) as c:
         yield c
 
 
@@ -242,15 +261,17 @@ def admin_cookies(token_admin):
 
 @pytest.fixture
 def client_usuario(token_usuario):
-    with TestClient(app, raise_server_exceptions=False) as c:
+    with CsrfTestClient(app, raise_server_exceptions=False) as c:
         c.cookies.set("access_token", token_usuario)
+        c.cookies.set("csrf_token", _TEST_CSRF)
         yield c
 
 
 @pytest.fixture
 def client_admin(token_admin):
-    with TestClient(app, raise_server_exceptions=False) as c:
+    with CsrfTestClient(app, raise_server_exceptions=False) as c:
         c.cookies.set("access_token", token_admin)
+        c.cookies.set("csrf_token", _TEST_CSRF)
         yield c
 
 
